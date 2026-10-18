@@ -17,6 +17,7 @@ class Game:
     install_dir: str = ""  # 安装目录
     uninstall: str = ""    # 卸载命令
     icon: str = ""         # 主程序/exe 路径（信息展示用）
+    appid: str = ""        # Steam appid（用于商店页等官方链接）
 
     @property
     def uid(self) -> str:
@@ -114,6 +115,7 @@ def scan_steam() -> list:
                 launch=f"steam://rungameid/{aid}",
                 install_dir=gdir,
                 uninstall=f"steam://uninstall/{aid}",
+                appid=aid,
             ))
     return games
 
@@ -297,6 +299,7 @@ def scan_all() -> list:
             ex.uninstall = ex.uninstall or g.uninstall
             ex.install_dir = ex.install_dir or g.install_dir
             ex.icon = ex.icon or g.icon
+            ex.appid = ex.appid or g.appid
             if dkey and dkey not in by_dir:
                 by_dir[dkey] = ex
             continue

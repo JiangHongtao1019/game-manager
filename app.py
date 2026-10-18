@@ -8,12 +8,14 @@ import threading
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import ttk, filedialog, messagebox
+from urllib.parse import urlparse, quote
 
+import favicons
 import icon_extractor
 import scanner
 from scanner import Game
 
-__version__ = "1.0"
+__version__ = "1.1"
 
 # ---------------- 配置存取 ----------------
 APP_DIR = os.path.join(os.environ["APPDATA"], "GameManager")
@@ -22,9 +24,14 @@ CONFIG_PATH = os.path.join(APP_DIR, "config.json")
 def load_config() -> dict:
     try:
         with open(CONFIG_PATH, encoding="utf-8") as f:
-            return json.load(f)
+            cfg = json.load(f)
     except Exception:
-        return {"manual": [], "hidden": [], "launch_override": {}}
+        cfg = {}
+    cfg.setdefault("manual", [])
+    cfg.setdefault("hidden", [])
+    cfg.setdefault("launch_override", {})
+    cfg.setdefault("bookmarks", {})
+    return cfg
 
 def save_config(cfg: dict):
     os.makedirs(APP_DIR, exist_ok=True)
@@ -45,6 +52,8 @@ SUB = "#8a93a5"
 DANGER = "#ef5350"
 ENTRY_BG = "#171b23"
 BTN_SUB = "#232936"     # 次级按钮
+PILL = "#242c3f"        # 网页页签
+PILL_HOVER = "#303b55"
 BAR_BG = "#0c0f16"
 FONT = "Microsoft YaHei UI"
 AVATAR_COLORS = ["#e5484d", "#e08c48", "#d2b23f", "#5aa74c",
@@ -80,6 +89,20 @@ def fmt_size(n) -> str:
         return f"{n / 1024:.0f} KB"
     return f"{n} B"
 
+
+def default_tabs(g: Game) -> list:
+    """安全预置页签：只放确定性链接（Steam 官方清单数据 + 搜索页本身），
+    具体攻略站（如暗黑核）由用户点 ＋ 手动添加"""
+    tabs = []
+    if getattr(g, "appid", ""):
+        tabs.append({"name": "Steam商店",
+                     "url": f"https://store.steampowered.com/app/{g.appid}/"})
+    tabs.append({"name": "搜攻略",
+                 "url": "https://www.baidu.com/s?wd=" + quote(g.name + " 攻略")})
+    tabs.append({"name": "B站视频",
+                 "url": "https://search.bilibili.com/all?keyword=" + quote(g.name)})
+    return tabs
+
 def _shell_exec(exe: str, args: str | None):
     """ShellExecuteW 启动 —— 与双击一致：自动 UAC 提权、无控制台窗口"""
     wd = os.path.dirname(exe) if os.path.isfile(exe) else None
@@ -112,6 +135,35 @@ class RoundButton(tk.Canvas):
 
     def set_canvas_bg(self, c):
         self.configure(bg=c)
+
+# ---------------- 折叠开关 / 网页页签 ----------------
+class Chevron(tk.Label):
+    """信息行尾的折叠开关小箭头（自带交互，不参与卡片递归绑定）"""
+
+    def __init__(self, master, card):
+        super().__init__(master, bg=CARD, fg=SUB, font=(FONT, 8),
+                         cursor="hand2", text="▸")
+        self.bind("<Button-1>", lambda e: card.toggle_expand())
+        self.bind("<Enter>", lambda e: self.configure(fg=ACCENT))
+        self.bind("<Leave>", lambda e: self.configure(fg=SUB))
+
+    def set_open(self, on):
+        self.configure(text="▾" if on else "▸")
+
+
+class WebPill(tk.Label):
+    """网页页签药丸按钮（自带点击/右键/悬停交互）"""
+
+    def __init__(self, master, text, cmd, menu=None, image=None):
+        super().__init__(master, text=text, image=image or "", compound="left",
+                         bg=PILL, fg="#c9d1e0", font=(FONT, 8), padx=10, pady=4,
+                         cursor="hand2")
+        self._menu = menu
+        self.bind("<Button-1>", lambda e: cmd())
+        self.bind("<Enter>", lambda e: self.configure(bg=PILL_HOVER))
+        self.bind("<Leave>", lambda e: self.configure(bg=PILL))
+        if menu:
+            self.bind("<Button-3>", lambda e: menu(e))
 
 # ---------------- 侧栏导航项 ----------------
 class NavItem(tk.Frame):
@@ -242,6 +294,55 @@ class AddGameDialog(tk.Toplevel):
         self.destroy()
         self.app.start_scan()
 
+# ---------------- 网页页签对话框 ----------------
+class BookmarkDialog(tk.Toplevel):
+    """添加 / 编辑网页页签"""
+
+    def __init__(self, app: "App", game: Game, index: int | None = None):
+        super().__init__(app)
+        self.app, self.game, self.index = app, game, index
+        self.configure(bg=BG, padx=16)
+        if index is None:
+            self.title("添加网页页签")
+            head, name, url = f"给「{game.name}」添加一个常用网站页签", "", ""
+        else:
+            self.title("编辑网页页签")
+            t = app.get_tabs(game)[index]
+            head, name, url = f"编辑「{game.name}」的网页页签", t["name"], t["url"]
+        self.geometry("440x240")
+        self.resizable(False, False)
+        tk.Label(self, text=head, bg=BG, fg=SUB, font=(FONT, 9)).pack(anchor="w", pady=(12, 6))
+        tk.Label(self, text="名字", bg=BG, fg=TEXT, font=(FONT, 9)).pack(anchor="w")
+        self.name = tk.Entry(self, bg=ENTRY_BG, fg=TEXT, insertbackground=TEXT,
+                             relief="flat", font=(FONT, 10))
+        self.name.pack(fill="x", ipady=4, pady=(2, 8))
+        self.name.insert(0, name)
+        tk.Label(self, text="网址", bg=BG, fg=TEXT, font=(FONT, 9)).pack(anchor="w")
+        self.url = tk.Entry(self, bg=ENTRY_BG, fg=TEXT, insertbackground=TEXT,
+                            relief="flat", font=(FONT, 10))
+        self.url.pack(fill="x", ipady=4, pady=(2, 4))
+        self.url.insert(0, url)
+        tk.Label(self, text="示例：暗黑核 / www.d2core.com/d4（可不带 https://）",
+                 bg=BG, fg="#5c6577", font=(FONT, 7)).pack(anchor="w")
+        brow = tk.Frame(self, bg=BG)
+        brow.pack(fill="x", pady=(10, 0))
+        mk_btn(brow, "保 存", self.save, ACCENT, "white", ACCENT_HOVER, padx=24).pack(side="right")
+        mk_btn(brow, "取 消", self.destroy, CARD, TEXT, CARD_HOVER, padx=24).pack(side="right", padx=6)
+        self.bind("<Return>", lambda e: self.save())
+
+    def save(self):
+        name, url = self.name.get().strip(), self.url.get().strip()
+        if not name or not url:
+            messagebox.showwarning("提示", "请填写名字和网址", parent=self)
+            return
+        if "://" not in url:
+            url = "https://" + url
+        if self.index is None:
+            self.app.add_tab(self.game, name, url)
+        else:
+            self.app.edit_tab(self.game, self.index, name, url)
+        self.destroy()
+
 # ---------------- 游戏卡片（圆角卡片） ----------------
 class GameCard(tk.Canvas):
     H = 78
@@ -250,15 +351,26 @@ class GameCard(tk.Canvas):
         super().__init__(parent, bg=BG, height=self.H, highlightthickness=0, cursor="hand2")
         self.game, self.app = game, app
         self._unhover = None
+        self._expanded = game.uid in app._expanded
+        self._panel_h = 0
+        self._pills = []
+        self._panel_frame = None
+        self._panel_win = None
+        self._sep = None
         self.bind("<Configure>", self._layout)
 
     def _layout(self, _e=None):
         w = self.winfo_width()
-        if w < 60:
+        # <Configure> 在位置移动时也会触发（如上方卡片展开导致下移），
+        # 但布局只依赖宽度 —— 宽度不变就跳过，避免整列卡片无谓重建
+        if w < 60 or w == getattr(self, "_lay_w", None):
             return
+        self._lay_w = w
         for c in self.winfo_children():
             c.destroy()
         self.delete("all")
+        self._pills = []
+        self._panel_frame = self._panel_win = self._sep = None
         self._bgitem = round_rect(self, 1, 1, w - 1, self.H - 1, 16,
                                   fill=CARD, outline=BORDER)
         # 图标块
@@ -273,13 +385,13 @@ class GameCard(tk.Canvas):
             tile.create_text(27, 28, text=self.game.name.strip()[:1].upper(),
                              fill="white", font=(FONT, 15, "bold"))
         self.create_window(16, 12, window=tile, anchor="nw")
-        # 文本区
+        # 文本区（create_window 的 width 强制宽度 -> 折叠箭头在各卡片间对齐）
         g, app = self.game, self.app
         txt = tk.Frame(self, bg=CARD)
         tk.Label(txt, text=g.name, bg=CARD, fg=TEXT, anchor="w",
                  font=(FONT, 11, "bold")).pack(anchor="w")
         sub = tk.Frame(txt, bg=CARD)
-        sub.pack(anchor="w", pady=(4, 0))
+        sub.pack(anchor="w", fill="x", pady=(4, 0))
         tk.Label(sub, text=g.source, bg=CHIP_COLORS.get(g.source, "#5c6577"),
                  fg="white", font=(FONT, 7, "bold"), padx=7, pady=1).pack(side="left")
         if g.uid in app._sizes:
@@ -292,7 +404,12 @@ class GameCard(tk.Canvas):
         if g.install_dir:
             tk.Label(sub, text=short_path(g.install_dir, 40), bg=CARD, fg=SUB,
                      font=(FONT, 8)).pack(side="left")
-        self.create_window(88, self.H // 2, window=txt, anchor="w")
+        self._chev = Chevron(sub, self)
+        if self._expanded:
+            self._chev.set_open(True)
+        self._chev.pack(side="right", padx=(8, 0))
+        self.create_window(88, self.H // 2, window=txt, anchor="w",
+                           width=max(w - 88 - 235, 240))
         # 按钮区
         btns = tk.Frame(self, bg=CARD)
         RoundButton(btns, "🗑", lambda: app.uninstall_game(g),
@@ -306,11 +423,121 @@ class GameCard(tk.Canvas):
             RoundButton(btns, "▶  启动", None, h=32, bold=True,
                         enabled=False).pack(side="right")
         self.create_window(w - 16, self.H // 2, window=btns, anchor="e")
+        # 展开的网页页签面板
+        h = self.H + self._build_panel(w) if self._expanded else self.H
+        if self.winfo_height() != h:
+            self.configure(height=h)
         self._bind_hovers()
+
+    # ---------- 网页页签面板（增量式：只动面板，不重建卡片头部） ----------
+    def _build_panel(self, w) -> int:
+        """构建/刷新展开的页签区（换行排布 + 末尾 ＋），返回面板高度"""
+        self._remove_panel()
+        self._sep = self.create_line(16, self.H + 2, w - 16, self.H + 2, fill=BORDER)
+        tabs = self.app.get_tabs(self.game)
+        panel = tk.Frame(self, bg=CARD)
+        self._panel_frame = panel
+        avail = max(w - 44, 220)
+        row, used = None, 0
+
+        def place(pill):
+            nonlocal row, used
+            pw = pill.winfo_reqwidth()
+            if row is None or used + pw > avail:
+                row = tk.Frame(panel, bg=CARD)
+                row.pack(fill="x", anchor="w", pady=(6, 0))
+                used = 0
+            pill.pack(side="left", padx=(0, 8))
+            used += pw + 8
+
+        for i, t in enumerate(tabs):
+            place(self._make_pill(panel, t, i))
+        place(WebPill(panel, "＋", lambda: BookmarkDialog(self.app, self.game)))
+        panel.update_idletasks()
+        ph = panel.winfo_reqheight()
+        self._panel_win = self.create_window(16, self.H + 10, window=panel, anchor="nw")
+        self._panel_h = ph + 22
+        return self._panel_h
+
+    def _remove_panel(self):
+        """移除面板（销毁子控件 + 删除画布项）"""
+        if self._panel_frame is not None:
+            try:
+                self._panel_frame.destroy()
+            except tk.TclError:
+                pass
+        for item in (self._panel_win, self._sep):
+            if item is not None:
+                try:
+                    self.delete(item)
+                except tk.TclError:
+                    pass
+        self._panel_frame = self._panel_win = self._sep = None
+        self._pills = []
+
+    def _make_pill(self, parent, tab, index):
+        host = urlparse(tab["url"]).netloc
+        img = self.app.get_favicon(host)
+        pill = WebPill(parent, tab["name"], lambda t=tab: self.app.open_url(t["url"]),
+                       menu=lambda e, i=index: self._tab_menu(e, i), image=img)
+        self._pills.append((pill, tab))
+        return pill
+
+    def _tab_menu(self, event, index):
+        m = tk.Menu(self, tearoff=0, bg=CARD, fg=TEXT, activebackground=ACCENT,
+                    activeforeground="white", bd=0, relief="flat")
+        m.add_command(label="✏️ 编辑页签",
+                      command=lambda: BookmarkDialog(self.app, self.game, index))
+        m.add_command(label="🗑 删除页签",
+                      command=lambda: self.app.delete_tab(self.game, index))
+        m.tk_popup(event.x_root, event.y_root)
+
+    def toggle_expand(self):
+        """展开/收起：面板只构建一次，之后用 canvas 项显隐切换（零重建）"""
+        self._expanded = not self._expanded
+        if self._expanded:
+            self.app._expanded.add(self.game.uid)
+        else:
+            self.app._expanded.discard(self.game.uid)
+        try:
+            self._chev.set_open(self._expanded)
+        except (tk.TclError, AttributeError):
+            pass
+        if self._expanded:
+            if self._panel_win is None:           # 首次展开才构建
+                self._build_panel(self.winfo_width())
+            else:
+                self.itemconfigure(self._sep, state="normal")
+                self.itemconfigure(self._panel_win, state="normal")
+            self.configure(height=self.H + self._panel_h)
+        else:
+            if self._panel_win is not None:
+                self.itemconfigure(self._sep, state="hidden")
+                self.itemconfigure(self._panel_win, state="hidden")
+            self.configure(height=self.H)
+
+    def rebuild_panel(self):
+        """页签数据变化后重刷（仅在展开状态）"""
+        if self._expanded:
+            self._build_panel(self.winfo_width())
+            self.configure(height=self.H + self._panel_h)
+
+    def on_favicon(self, host):
+        if not self._pills:
+            return
+        img = self.app.get_favicon(host)
+        if not img:
+            return
+        for pill, tab in self._pills:
+            if urlparse(tab["url"]).netloc == host:
+                try:
+                    pill.configure(image=img, text=tab["name"])
+                except tk.TclError:
+                    pass
 
     def _bind_hovers(self):
         def bindall(w):
-            if isinstance(w, RoundButton):
+            if isinstance(w, (RoundButton, Chevron, WebPill)):
                 return
             w.bind("<Enter>", self._enter, add="+")
             w.bind("<Leave>", self._leave, add="+")
@@ -385,6 +612,10 @@ class App(tk.Tk):
         self._sizes: dict[str, int | None] = {}
         self._cards: dict[str, GameCard] = {}
         self._size_running = False
+        self._expanded: set[str] = set()          # 展开网页区的游戏 uid
+        self._fav_images: dict[str, tk.PhotoImage] = {}
+        self._fav_pending: set[str] = set()
+        self._fav_running = False
         self.scanning = False
         self.filter = "全部"
         self.menu_game: Game | None = None
@@ -631,6 +862,98 @@ class App(tk.Tk):
             txt += " · 磁盘占用统计中…"
         txt += f" · 显示 {shown} 款 · 右键卡片更多操作"
         self.set_status(txt)
+
+    # ---------- 网页页签 ----------
+    def get_tabs(self, g: Game) -> list:
+        bm = self.cfg.get("bookmarks", {})
+        if g.uid in bm:
+            return bm[g.uid]
+        return default_tabs(g)
+
+    def _materialize_tabs(self, g: Game) -> list:
+        """首次修改前把当前生效页签固化进配置（之后不再自动生成预置）"""
+        bm = self.cfg.setdefault("bookmarks", {})
+        if g.uid not in bm:
+            bm[g.uid] = [dict(t) for t in default_tabs(g)]
+        return bm[g.uid]
+
+    def add_tab(self, g: Game, name: str, url: str):
+        self._materialize_tabs(g).append({"name": name, "url": url})
+        save_config(self.cfg)
+        self._refresh_card_panel(g)
+
+    def edit_tab(self, g: Game, index: int, name: str, url: str):
+        tabs = self._materialize_tabs(g)
+        if 0 <= index < len(tabs):
+            tabs[index] = {"name": name, "url": url}
+            save_config(self.cfg)
+            self._refresh_card_panel(g)
+
+    def delete_tab(self, g: Game, index: int):
+        tabs = self._materialize_tabs(g)
+        if 0 <= index < len(tabs):
+            tabs.pop(index)
+            save_config(self.cfg)
+            self._refresh_card_panel(g)
+
+    def _refresh_card_panel(self, g: Game):
+        card = self._cards.get(g.uid)
+        if card is not None:
+            card.rebuild_panel()
+
+    def open_url(self, url: str):
+        if "://" not in url:
+            url = "https://" + url
+        try:
+            os.startfile(url)
+        except OSError:
+            messagebox.showerror("错误", f"无法打开链接：\n{url}")
+
+    # ---------- favicon ----------
+    def get_favicon(self, host: str):
+        """取页签 favicon（缓存命中立即返回，否则触发后台下载）"""
+        if not host:
+            return None
+        img = self._fav_images.get(host)
+        if img:
+            return img
+        png, should = favicons.lookup(host)
+        if png:
+            try:
+                img = tk.PhotoImage(data=icon_extractor.photo_data(png))
+                self._fav_images[host] = img
+                return img
+            except tk.TclError:
+                return None
+        if should and host not in self._fav_pending:
+            self._fav_pending.add(host)
+            self._start_fav_worker()
+        return None
+
+    def _start_fav_worker(self):
+        if self._fav_running:
+            return
+        self._fav_running = True
+        threading.Thread(target=self._fav_worker, daemon=True).start()
+
+    def _fav_worker(self):
+        while self._fav_pending:
+            host = next(iter(self._fav_pending))
+            try:
+                favicons.fetch(host)
+            except Exception:
+                pass
+            self._fav_pending.discard(host)
+            try:
+                self.after(0, lambda h=host: self._favicon_ready(h))
+            except tk.TclError:
+                return
+        self._fav_running = False
+
+    def _favicon_ready(self, host):
+        if self.get_favicon(host):
+            for card in list(self._cards.values()):
+                card.on_favicon(host)
 
     def get_photo(self, g: Game):
         return self._photos.get(g.uid)

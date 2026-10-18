@@ -1,6 +1,6 @@
 # 🎮 游戏管理器
 
-![version](https://img.shields.io/badge/version-1.0-5865F2) ![platform](https://img.shields.io/badge/platform-Windows-blue) ![python](https://img.shields.io/badge/Python-3.10%2B-3776AB) ![deps](https://img.shields.io/badge/deps-zero-76B729)
+![version](https://img.shields.io/badge/version-1.1-5865F2) ![platform](https://img.shields.io/badge/platform-Windows-blue) ![python](https://img.shields.io/badge/Python-3.10%2B-3776AB) ![deps](https://img.shields.io/badge/deps-zero-76B729)
 
 一个本地桌面小工具，自动扫描并管理你电脑里的所有游戏。
 
@@ -19,6 +19,7 @@
 
 - **自动扫描**：自动发现 Steam、Epic、注册表（含战网/腾讯/拳头等）中已安装的游戏
 - **一键启动**：点击卡片上的「▶ 启动」按钮，或双击卡片直接运行游戏
+- **🌐 网页页签**（v1.1 新增）：卡片右侧 ▾ 展开网页区——自动预置 Steam商店/搜攻略/B站 等安全页签（点击即开），点「＋」可添加任意网站（如攻略站），自动抓取网站小图标，右键可编辑/删除
 - **显示游戏图标**：自动从游戏主程序提取真实图标
 - **跳转路径**：点「📁」直接在资源管理器中打开并选中游戏主程序（路径详情可从右键菜单「查看路径」查看，支持复制）
 - **一键卸载**：点击「🗑」运行游戏的官方卸载程序（带确认提示）
