@@ -86,7 +86,7 @@ def report(elapsed=0):
         a.update()
         dt = (time.perf_counter() - t0) * 1000
         check(f"首次展开耗时 {dt:.0f}ms（<100ms）", dt < 100)
-        check(f"展开后高度 {card.winfo_height()} > 78", card.winfo_height() > 78)
+        check(f"展开后高度 {card.winfo_height()} > {card.H}", card.winfo_height() > card.H)
         check(f"药丸数 {len(card._pills)} == 3", len(card._pills) == 3)
         for label in ("二次", "三次"):
             t0 = time.perf_counter()
@@ -101,9 +101,24 @@ def report(elapsed=0):
         a.update()
         dt = (time.perf_counter() - t0) * 1000
         check(f"收起耗时 {dt:.0f}ms（<100ms）", dt < 100)
-        check(f"折叠后高度 {card.winfo_height()} == 78", card.winfo_height() == 78)
-        card.toggle_expand()
+        check(f"折叠后高度 {card.winfo_height()} == {card.H}", card.winfo_height() == card.H)
+        # 单击卡片 = 展开/收起（手风琴：同时只展开一张）
+        card.event_generate("<Button-1>", x=40, y=40)
         a.update()
+        check("单击卡片展开", card.winfo_height() > card.H)
+        time.sleep(0.35)                        # 间隔拉开，避免被判为双击
+        card.event_generate("<Button-1>", x=40, y=40)
+        a.update()
+        check("再单击收起", card.winfo_height() == card.H)
+        other = next((c for c in a._cards.values() if c is not card), None)
+        other.event_generate("<Button-1>", x=40, y=40)
+        a.update()
+        check("另一张卡展开", other.winfo_height() > other.H)
+        time.sleep(0.35)
+        card.event_generate("<Button-1>", x=40, y=40)
+        a.update()
+        check("手风琴：展开暗黑IV自动收起另一张",
+              card.winfo_height() > card.H and other.winfo_height() == other.H)
 
     # 编辑 / 删除
     if d4:

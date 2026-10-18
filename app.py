@@ -4,6 +4,7 @@ import ctypes
 import json
 import os
 import subprocess
+import queue
 import threading
 import tkinter as tk
 import tkinter.font as tkfont
@@ -64,7 +65,7 @@ CHIP_COLORS = {"Steam": "#3d6fd9", "Epic": "#8b5cf6", "注册表": "#c96f3b",
 def mk_btn(parent, text, cmd, bg_, fg_, hover, padx=12):
     return tk.Button(parent, text=text, command=cmd, bg=bg_, fg=fg_,
                      activebackground=hover, activeforeground=fg_, relief="flat",
-                     bd=0, padx=padx, pady=4, font=(FONT, 9), cursor="hand2")
+                     bd=0, padx=padx, pady=5, font=(FONT, 10), cursor="hand2")
 
 def short_path(p: str, n=52) -> str:
     if not p:
@@ -113,7 +114,7 @@ def _shell_exec(exe: str, args: str | None):
 # ---------------- 圆角按钮 ----------------
 class RoundButton(tk.Canvas):
     def __init__(self, master, text, cmd=None, bg_=BTN_SUB, fg_="#c9d1e0",
-                 hover="#39445c", h=30, r=10, padx=14, fs=9, bold=False, enabled=True):
+                 hover="#39445c", h=34, r=11, padx=15, fs=10, bold=False, enabled=True):
         f = tkfont.Font(family=FONT, size=fs, weight="bold" if bold else "normal")
         w = f.measure(text) + padx * 2
         if not enabled:
@@ -141,9 +142,9 @@ class Chevron(tk.Label):
     """信息行尾的折叠开关小箭头（自带交互，不参与卡片递归绑定）"""
 
     def __init__(self, master, card):
-        super().__init__(master, bg=CARD, fg=SUB, font=(FONT, 8),
-                         cursor="hand2", text="▸")
-        self.bind("<Button-1>", lambda e: card.toggle_expand())
+        super().__init__(master, bg=CARD, fg="#b6c1d6", font=(FONT, 13),
+                         cursor="hand2", text="▸", padx=2)
+        self.bind("<Button-1>", lambda e: card.app.request_expand(card))
         self.bind("<Enter>", lambda e: self.configure(fg=ACCENT))
         self.bind("<Leave>", lambda e: self.configure(fg=SUB))
 
@@ -156,7 +157,7 @@ class WebPill(tk.Label):
 
     def __init__(self, master, text, cmd, menu=None, image=None):
         super().__init__(master, text=text, image=image or "", compound="left",
-                         bg=PILL, fg="#c9d1e0", font=(FONT, 8), padx=10, pady=4,
+                         bg=PILL, fg="#c9d1e0", font=(FONT, 9), padx=12, pady=5,
                          cursor="hand2")
         self._menu = menu
         self.bind("<Button-1>", lambda e: cmd())
@@ -175,12 +176,12 @@ class NavItem(tk.Frame):
         body = tk.Frame(self, bg=SIDE)
         body.pack(side="left", fill="x", expand=True)
         self.ic = tk.Label(body, text=icon, bg=SIDE, fg="#7c8699",
-                           font=(FONT, 10), width=3, anchor="w")
+                           font=(FONT, 11), width=3, anchor="w")
         self.ic.pack(side="left", pady=8)
         self.tx = tk.Label(body, text=label, bg=SIDE, fg="#aab3c5",
-                           font=(FONT, 10), anchor="w")
+                           font=(FONT, 11), anchor="w")
         self.tx.pack(side="left")
-        self.ct = tk.Label(body, text="", bg=SIDE, fg="#5c6577", font=(FONT, 8))
+        self.ct = tk.Label(body, text="", bg=SIDE, fg="#5c6577", font=(FONT, 9))
         self.ct.pack(side="right", padx=(0, 16))
         for w in (self, body, self.ic, self.tx, self.ct):
             w.bind("<Button-1>", lambda e: cmd())
@@ -212,10 +213,10 @@ class PathDialog(tk.Toplevel):
         super().__init__(master)
         self.configure(bg=BG, padx=16)
         self.title(f"路径信息 - {game.name}")
-        self.geometry("600x350")
+        self.geometry("640x380")
         self.resizable(False, False)
         tk.Label(self, text=game.name, bg=BG, fg=TEXT,
-                 font=(FONT, 14, "bold")).pack(anchor="w", pady=(12, 10))
+                 font=(FONT, 15, "bold")).pack(anchor="w", pady=(12, 10))
         try:
             sz = fmt_size(master._sizes[game.uid])
         except Exception:
@@ -226,11 +227,11 @@ class PathDialog(tk.Toplevel):
                 ("卸载命令", game.uninstall or "（未知）", False)]
         for label, value, with_open in rows:
             tk.Label(self, text=label, bg=BG, fg=SUB,
-                     font=(FONT, 8, "bold")).pack(anchor="w", pady=(6, 2))
+                     font=(FONT, 9, "bold")).pack(anchor="w", pady=(6, 2))
             row = tk.Frame(self, bg=BG)
             row.pack(fill="x")
             e = tk.Entry(row, bg=ENTRY_BG, fg=TEXT, insertbackground=TEXT,
-                         relief="flat", font=(FONT, 9), readonlybackground=ENTRY_BG)
+                         relief="flat", font=(FONT, 10), readonlybackground=ENTRY_BG)
             e.insert(0, value)
             e.configure(state="readonly")
             e.pack(side="left", fill="x", expand=True, ipady=3)
@@ -253,19 +254,19 @@ class AddGameDialog(tk.Toplevel):
         self.app = app
         self.configure(bg=BG, padx=16)
         self.title("手动添加游戏")
-        self.geometry("480x190")
+        self.geometry("520x210")
         self.resizable(False, False)
         tk.Label(self, text="添加一个不在自动扫描列表里的游戏", bg=BG, fg=SUB,
-                 font=(FONT, 9)).pack(anchor="w", pady=(12, 6))
-        tk.Label(self, text="游戏名称", bg=BG, fg=TEXT, font=(FONT, 9)).pack(anchor="w")
+                 font=(FONT, 10)).pack(anchor="w", pady=(12, 6))
+        tk.Label(self, text="游戏名称", bg=BG, fg=TEXT, font=(FONT, 10)).pack(anchor="w")
         self.name = tk.Entry(self, bg=ENTRY_BG, fg=TEXT, insertbackground=TEXT,
-                             relief="flat", font=(FONT, 10))
+                             relief="flat", font=(FONT, 11))
         self.name.pack(fill="x", ipady=4, pady=(2, 8))
-        tk.Label(self, text="游戏主程序 (.exe)", bg=BG, fg=TEXT, font=(FONT, 9)).pack(anchor="w")
+        tk.Label(self, text="游戏主程序 (.exe)", bg=BG, fg=TEXT, font=(FONT, 10)).pack(anchor="w")
         prow = tk.Frame(self, bg=BG)
         prow.pack(fill="x", pady=2)
         self.exe = tk.Entry(prow, bg=ENTRY_BG, fg=TEXT, insertbackground=TEXT,
-                            relief="flat", font=(FONT, 10))
+                            relief="flat", font=(FONT, 11))
         self.exe.pack(side="left", fill="x", expand=True, ipady=4)
         mk_btn(prow, "浏览…", self.browse, CARD, TEXT, CARD_HOVER).pack(side="left", padx=(6, 0))
         brow = tk.Frame(self, bg=BG)
@@ -309,21 +310,21 @@ class BookmarkDialog(tk.Toplevel):
             self.title("编辑网页页签")
             t = app.get_tabs(game)[index]
             head, name, url = f"编辑「{game.name}」的网页页签", t["name"], t["url"]
-        self.geometry("440x240")
+        self.geometry("500x270")
         self.resizable(False, False)
-        tk.Label(self, text=head, bg=BG, fg=SUB, font=(FONT, 9)).pack(anchor="w", pady=(12, 6))
-        tk.Label(self, text="名字", bg=BG, fg=TEXT, font=(FONT, 9)).pack(anchor="w")
+        tk.Label(self, text=head, bg=BG, fg=SUB, font=(FONT, 10)).pack(anchor="w", pady=(12, 6))
+        tk.Label(self, text="名字", bg=BG, fg=TEXT, font=(FONT, 10)).pack(anchor="w")
         self.name = tk.Entry(self, bg=ENTRY_BG, fg=TEXT, insertbackground=TEXT,
-                             relief="flat", font=(FONT, 10))
+                             relief="flat", font=(FONT, 11))
         self.name.pack(fill="x", ipady=4, pady=(2, 8))
         self.name.insert(0, name)
-        tk.Label(self, text="网址", bg=BG, fg=TEXT, font=(FONT, 9)).pack(anchor="w")
+        tk.Label(self, text="网址", bg=BG, fg=TEXT, font=(FONT, 10)).pack(anchor="w")
         self.url = tk.Entry(self, bg=ENTRY_BG, fg=TEXT, insertbackground=TEXT,
-                            relief="flat", font=(FONT, 10))
+                            relief="flat", font=(FONT, 11))
         self.url.pack(fill="x", ipady=4, pady=(2, 4))
         self.url.insert(0, url)
         tk.Label(self, text="示例：暗黑核 / www.d2core.com/d4（可不带 https://）",
-                 bg=BG, fg="#5c6577", font=(FONT, 7)).pack(anchor="w")
+                 bg=BG, fg="#5c6577", font=(FONT, 8)).pack(anchor="w")
         brow = tk.Frame(self, bg=BG)
         brow.pack(fill="x", pady=(10, 0))
         mk_btn(brow, "保 存", self.save, ACCENT, "white", ACCENT_HOVER, padx=24).pack(side="right")
@@ -345,7 +346,7 @@ class BookmarkDialog(tk.Toplevel):
 
 # ---------------- 游戏卡片（圆角卡片） ----------------
 class GameCard(tk.Canvas):
-    H = 78
+    H = 94
 
     def __init__(self, parent, game: Game, app: "App"):
         super().__init__(parent, bg=BG, height=self.H, highlightthickness=0, cursor="hand2")
@@ -375,52 +376,52 @@ class GameCard(tk.Canvas):
                                   fill=CARD, outline=BORDER)
         # 图标块
         photo = self.app.get_photo(self.game)
-        tile = tk.Canvas(self, width=54, height=54, bg=CARD, highlightthickness=0)
-        round_rect(tile, 0, 0, 53, 53, 15, fill="#20293a", outline="")
+        tile = tk.Canvas(self, width=64, height=64, bg=CARD, highlightthickness=0)
+        round_rect(tile, 0, 0, 63, 63, 17, fill="#20293a", outline="")
         if photo:
-            tile.create_image(27, 27, image=photo)
+            tile.create_image(32, 32, image=photo)
         else:
             color = AVATAR_COLORS[sum(self.game.name.encode("utf-8")) % len(AVATAR_COLORS)]
-            tile.create_oval(6, 6, 47, 47, fill=color, outline="")
-            tile.create_text(27, 28, text=self.game.name.strip()[:1].upper(),
-                             fill="white", font=(FONT, 15, "bold"))
-        self.create_window(16, 12, window=tile, anchor="nw")
+            tile.create_oval(7, 7, 56, 56, fill=color, outline="")
+            tile.create_text(32, 33, text=self.game.name.strip()[:1].upper(),
+                             fill="white", font=(FONT, 17, "bold"))
+        self.create_window(18, 15, window=tile, anchor="nw")
         # 文本区（create_window 的 width 强制宽度 -> 折叠箭头在各卡片间对齐）
         g, app = self.game, self.app
         txt = tk.Frame(self, bg=CARD)
         tk.Label(txt, text=g.name, bg=CARD, fg=TEXT, anchor="w",
-                 font=(FONT, 11, "bold")).pack(anchor="w")
+                 font=(FONT, 12, "bold")).pack(anchor="w")
         sub = tk.Frame(txt, bg=CARD)
         sub.pack(anchor="w", fill="x", pady=(4, 0))
         tk.Label(sub, text=g.source, bg=CHIP_COLORS.get(g.source, "#5c6577"),
-                 fg="white", font=(FONT, 7, "bold"), padx=7, pady=1).pack(side="left")
+                 fg="white", font=(FONT, 8, "bold"), padx=8, pady=2).pack(side="left")
         if g.uid in app._sizes:
             self._size_lbl = tk.Label(sub, text="💾 " + fmt_size(app._sizes[g.uid]),
-                                      bg=CARD, fg="#8fb3ff", font=(FONT, 8), padx=9)
+                                      bg=CARD, fg="#8fb3ff", font=(FONT, 9), padx=10)
         else:
             self._size_lbl = tk.Label(sub, text="💾 统计中…", bg=CARD,
-                                      fg="#8fb3ff", font=(FONT, 8), padx=9)
+                                      fg="#8fb3ff", font=(FONT, 9), padx=10)
         self._size_lbl.pack(side="left")
         if g.install_dir:
             tk.Label(sub, text=short_path(g.install_dir, 40), bg=CARD, fg=SUB,
-                     font=(FONT, 8)).pack(side="left")
+                     font=(FONT, 9)).pack(side="left")
         self._chev = Chevron(sub, self)
         if self._expanded:
             self._chev.set_open(True)
         self._chev.pack(side="right", padx=(8, 0))
-        self.create_window(88, self.H // 2, window=txt, anchor="w",
-                           width=max(w - 88 - 235, 240))
+        self.create_window(100, self.H // 2, window=txt, anchor="w",
+                           width=max(w - 100 - 275, 260))
         # 按钮区
         btns = tk.Frame(self, bg=CARD)
         RoundButton(btns, "🗑", lambda: app.uninstall_game(g),
-                    BTN_SUB, DANGER, "#39445c", h=32, padx=10).pack(side="right", padx=(7, 0))
+                    BTN_SUB, DANGER, "#39445c", h=36, padx=12).pack(side="right", padx=(8, 0))
         RoundButton(btns, "📁", lambda: app.jump_to(g),
-                    BTN_SUB, "#c9d1e0", "#39445c", h=32, padx=10).pack(side="right", padx=(7, 0))
+                    BTN_SUB, "#c9d1e0", "#39445c", h=36, padx=12).pack(side="right", padx=(8, 0))
         if g.launch:
             RoundButton(btns, "▶  启动", lambda: app.launch_game(g),
-                        ACCENT, "white", ACCENT_HOVER, h=32, bold=True).pack(side="right")
+                        ACCENT, "white", ACCENT_HOVER, h=36, bold=True).pack(side="right")
         else:
-            RoundButton(btns, "▶  启动", None, h=32, bold=True,
+            RoundButton(btns, "▶  启动", None, h=36, bold=True,
                         enabled=False).pack(side="right")
         self.create_window(w - 16, self.H // 2, window=btns, anchor="e")
         # 展开的网页页签面板
@@ -437,7 +438,7 @@ class GameCard(tk.Canvas):
         tabs = self.app.get_tabs(self.game)
         panel = tk.Frame(self, bg=CARD)
         self._panel_frame = panel
-        avail = max(w - 44, 220)
+        avail = max(w - 48, 240)
         row, used = None, 0
 
         def place(pill):
@@ -445,7 +446,7 @@ class GameCard(tk.Canvas):
             pw = pill.winfo_reqwidth()
             if row is None or used + pw > avail:
                 row = tk.Frame(panel, bg=CARD)
-                row.pack(fill="x", anchor="w", pady=(6, 0))
+                row.pack(fill="x", anchor="w", pady=(8, 0))
                 used = 0
             pill.pack(side="left", padx=(0, 8))
             used += pw + 8
@@ -455,8 +456,8 @@ class GameCard(tk.Canvas):
         place(WebPill(panel, "＋", lambda: BookmarkDialog(self.app, self.game)))
         panel.update_idletasks()
         ph = panel.winfo_reqheight()
-        self._panel_win = self.create_window(16, self.H + 10, window=panel, anchor="nw")
-        self._panel_h = ph + 22
+        self._panel_win = self.create_window(18, self.H + 12, window=panel, anchor="nw")
+        self._panel_h = ph + 26
         return self._panel_h
 
     def _remove_panel(self):
@@ -536,15 +537,18 @@ class GameCard(tk.Canvas):
                     pass
 
     def _bind_hovers(self):
-        def bindall(w):
+        panel = self._panel_frame
+
+        def bindall(w, in_panel=False):
             if isinstance(w, (RoundButton, Chevron, WebPill)):
                 return
             w.bind("<Enter>", self._enter, add="+")
             w.bind("<Leave>", self._leave, add="+")
-            w.bind("<Double-Button-1>", lambda e: self.app.launch_game(self.game), add="+")
+            if not in_panel:      # 面板内部空白不响应单击，防误触收起
+                w.bind("<Button-1>", lambda e: self.app.request_expand(self), add="+")
             w.bind("<Button-3>", lambda e: self.app.show_menu(e, self.game), add="+")
             for c in w.winfo_children():
-                bindall(c)
+                bindall(c, in_panel or c is panel)
         bindall(self)
 
     def set_size(self, n):
@@ -595,10 +599,10 @@ class App(tk.Tk):
         self.configure(bg=BG)
         # 按屏幕比例设定窗口大小并居中（适配高分辨率 / 高 DPI 屏幕）
         sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        w = min(max(int(sw * 0.60), 980), 1560)
-        h = min(max(int(sh * 0.80), 640), 1060)
+        w = min(max(int(sw * 0.72), 1080), 1840)
+        h = min(max(int(sh * 0.85), 700), 1200)
         self.geometry(f"{w}x{h}+{(sw - w) // 2}+{max((sh - h) // 3, 0)}")
-        self.minsize(760, 540)
+        self.minsize(900, 620)
         self._setup_styles()
         try:  # 窗口/任务栏图标
             _icon = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
@@ -616,6 +620,10 @@ class App(tk.Tk):
         self._fav_images: dict[str, tk.PhotoImage] = {}
         self._fav_pending: set[str] = set()
         self._fav_running = False
+        # 工作线程 → 主线程 UI 队列：绝不从子线程调 after()（Tcl 非线程安全，
+        # 曾在双击时并发触发 0xc0000409 闪退）
+        self._uiq: queue.Queue = queue.Queue()
+        self.after(50, self._poll_uiq)
         self.scanning = False
         self.filter = "全部"
         self.menu_game: Game | None = None
@@ -646,12 +654,12 @@ class App(tk.Tk):
         side.pack_propagate(False)
         logo = tk.Frame(side, bg=SIDE)
         logo.pack(fill="x", padx=18, pady=(22, 16))
-        tk.Label(logo, text="🎮", bg=SIDE, fg=TEXT, font=(FONT, 16)).pack(side="left")
+        tk.Label(logo, text="🎮", bg=SIDE, fg=TEXT, font=(FONT, 18)).pack(side="left")
         tk.Label(logo, text="游戏中心", bg=SIDE, fg=TEXT,
-                 font=(FONT, 14, "bold")).pack(side="left", padx=9)
+                 font=(FONT, 16, "bold")).pack(side="left", padx=9)
         tk.Frame(side, bg="#1a2130", height=1).pack(fill="x", padx=14)
         tk.Label(side, text="平台", bg=SIDE, fg="#5c6577",
-                 font=(FONT, 8)).pack(anchor="w", padx=24, pady=(12, 4))
+                 font=(FONT, 9)).pack(anchor="w", padx=24, pady=(12, 4))
         self.nav: dict[str, NavItem] = {}
         for key, icon, label in NAV_ITEMS:
             n = NavItem(side, icon, label, lambda k=key: self._set_filter(k))
@@ -664,7 +672,7 @@ class App(tk.Tk):
                                  ("ℹ", "关于", self._about)):
             NavItem(side, icon, label, cmd).pack(fill="x", padx=8, pady=1)
         tk.Label(side, text=f"v{__version__}", bg=SIDE, fg="#3d4656",
-                 font=(FONT, 7)).pack(pady=(2, 8))
+                 font=(FONT, 8)).pack(pady=(2, 8))
 
     def _build_main(self):
         main = tk.Frame(self, bg=BG)
@@ -672,19 +680,19 @@ class App(tk.Tk):
         head = tk.Frame(main, bg=BG)
         head.pack(fill="x", padx=26, pady=(20, 2))
         tk.Label(head, text="游戏中心", bg=BG, fg=TEXT,
-                 font=(FONT, 16, "bold")).pack(anchor="w")
-        tk.Label(head, text="自动发现本机游戏 · 双击卡片立即启动", bg=BG, fg=SUB,
-                 font=(FONT, 8)).pack(anchor="w")
+                 font=(FONT, 18, "bold")).pack(anchor="w")
+        tk.Label(head, text="自动发现本机游戏 · 单击卡片展开网页页签", bg=BG, fg=SUB,
+                 font=(FONT, 9)).pack(anchor="w")
         bar = tk.Frame(main, bg=BG)
         bar.pack(fill="x", padx=26, pady=(10, 8))
         sf = tk.Frame(bar, bg=ENTRY_BG, highlightthickness=1, highlightbackground=BORDER)
         sf.pack(side="left", fill="x", expand=True)
         tk.Label(sf, text="🔍", bg=ENTRY_BG, fg=SUB,
-                 font=(FONT, 9)).pack(side="left", padx=(10, 4), pady=6)
+                 font=(FONT, 10)).pack(side="left", padx=(10, 4), pady=6)
         self.search_var = tk.StringVar()
         self.search_var.trace_add("write", lambda *a: self.refresh_cards())
         e = tk.Entry(sf, textvariable=self.search_var, bg=ENTRY_BG, fg=TEXT,
-                     insertbackground=TEXT, relief="flat", font=(FONT, 10),
+                     insertbackground=TEXT, relief="flat", font=(FONT, 11),
                      highlightthickness=0)
         e.pack(side="left", fill="x", expand=True, padx=(0, 10), pady=6)
         rb = tk.Frame(bar, bg=BG)
@@ -697,7 +705,7 @@ class App(tk.Tk):
         st = tk.Frame(main, bg=BAR_BG)
         st.pack(fill="x", side="bottom")
         self.status = tk.Label(st, text="正在扫描…", bg=BAR_BG, fg=SUB, anchor="w",
-                               font=(FONT, 8), padx=18, pady=5)
+                               font=(FONT, 9), padx=18, pady=6)
         self.status.pack(fill="x")
         body = tk.Frame(main, bg=BG)
         body.pack(fill="both", expand=True)
@@ -718,7 +726,7 @@ class App(tk.Tk):
     def _build_menu(self):
         self.menu = tk.Menu(self, tearoff=0, bg=CARD, fg=TEXT, relief="flat",
                             activebackground=ACCENT, activeforeground="white",
-                            font=(FONT, 9), bd=0)
+                            font=(FONT, 10), bd=0)
         self.menu.add_command(label="▶ 启动", command=lambda: self.launch_game(self.menu_game))
         self.menu.add_command(label="📁 查看路径", command=lambda: self.show_path(self.menu_game))
         self.menu.add_command(label="📂 跳转到所在位置", command=lambda: self.jump_to(self.menu_game))
@@ -757,6 +765,21 @@ class App(tk.Tk):
         for k, n in self.nav.items():
             n.set_count(counts.get(k, 0))
 
+    # ---------- 工作线程 UI 队列 ----------
+    def _poll_uiq(self):
+        """主线程 50ms 轮询分发工作线程的 UI 请求（工作线程零 Tk 调用）"""
+        try:
+            while True:
+                fn = self._uiq.get_nowait()
+                try:
+                    fn()
+                except Exception:
+                    pass
+        except queue.Empty:
+            pass
+        if self.winfo_exists():
+            self.after(50, self._poll_uiq)
+
     # ---------- 扫描 ----------
     def start_scan(self):
         self.scanning = True
@@ -787,11 +810,7 @@ class App(tk.Tk):
                     icons[g.uid] = png
             except Exception:
                 pass
-        try:
-            if self.winfo_exists():
-                self.after(0, lambda: self._apply_scan(games, manual, icons))
-        except tk.TclError:
-            pass
+        self._uiq.put(lambda: self._apply_scan(games, manual, icons))
 
     def _apply_scan(self, games, manual, icons):
         self.scanning = False
@@ -811,8 +830,8 @@ class App(tk.Tk):
         for uid, png in icons.items():
             try:
                 ph = tk.PhotoImage(data=icon_extractor.photo_data(png), master=self)
-                if ph.width() > 48 or ph.height() > 48:
-                    k = max(-(-ph.width() // 48), -(-ph.height() // 48))
+                if ph.width() > 64 or ph.height() > 64:
+                    k = max(-(-ph.width() // 64), -(-ph.height() // 64))
                     ph = ph.subsample(k, k)
                 self._photos[uid] = ph
             except tk.TclError:
@@ -836,14 +855,11 @@ class App(tk.Tk):
                         self._sizes[g.uid] = scanner.dir_size(g.install_dir)
                     else:
                         self._sizes[g.uid] = None
-                    self.after(0, lambda u=g.uid: self._notify_size(u))
+                    self._uiq.put(lambda u=g.uid: self._notify_size(u))
             except Exception:
                 pass
         self._size_running = False
-        try:
-            self.after(0, self._update_status)
-        except tk.TclError:
-            pass
+        self._uiq.put(self._update_status)
 
     def _notify_size(self, uid):
         card = self._cards.get(uid)
@@ -944,10 +960,7 @@ class App(tk.Tk):
             except Exception:
                 pass
             self._fav_pending.discard(host)
-            try:
-                self.after(0, lambda h=host: self._favicon_ready(h))
-            except tk.TclError:
-                return
+            self._uiq.put(lambda h=host: self._favicon_ready(h))
         self._fav_running = False
 
     def _favicon_ready(self, host):
@@ -965,13 +978,13 @@ class App(tk.Tk):
         shown = [g for g in self.games if self._match(g) and q in g.name.lower()]
         if self.scanning:
             tk.Label(self.inner, text="⏳  正在扫描本机游戏…", bg=BG, fg=SUB,
-                     font=(FONT, 12)).pack(pady=80)
+                     font=(FONT, 13)).pack(pady=80)
         elif not shown:
             tip = "没有匹配的游戏" if q else "此分类下暂无游戏"
             tk.Label(self.inner, text="🎮", bg=BG, fg="#2a3348",
-                     font=(FONT, 34)).pack(pady=(90, 8))
+                     font=(FONT, 36)).pack(pady=(90, 8))
             tk.Label(self.inner, text=tip, bg=BG, fg=SUB,
-                     font=(FONT, 11)).pack()
+                     font=(FONT, 12)).pack()
         else:
             self._cards = {}
             for g in shown:
@@ -981,6 +994,15 @@ class App(tk.Tk):
         self._update_status()
 
     # ---------- 操作 ----------
+    def request_expand(self, card):
+        """手风琴模式：展开目标卡片，同时收起其他已展开的卡片"""
+        want_open = not card._expanded
+        for c in list(self._cards.values()):
+            if c is not card and c._expanded:
+                c.toggle_expand()
+        if want_open != card._expanded:
+            card.toggle_expand()
+
     def launch_game(self, g: Game):
         if not g:
             return
@@ -1082,7 +1104,7 @@ class App(tk.Tk):
 
     def popup_settings(self):
         m = tk.Menu(self, tearoff=0, bg=CARD, fg=TEXT, activebackground=ACCENT,
-                    activeforeground="white", font=(FONT, 9), bd=0)
+                    activeforeground="white", font=(FONT, 10), bd=0)
         m.add_command(label="👁 恢复所有隐藏的游戏", command=self.restore_hidden)
         m.add_command(label="📝 打开配置文件", command=lambda: os.startfile(CONFIG_PATH))
         m.tk_popup(self.winfo_pointerx(), self.winfo_pointery())
