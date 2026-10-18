@@ -67,6 +67,14 @@ def mk_btn(parent, text, cmd, bg_, fg_, hover, padx=12):
                      activebackground=hover, activeforeground=fg_, relief="flat",
                      bd=0, padx=padx, pady=5, font=(FONT, 10), cursor="hand2")
 
+def fit_dialog(dlg, master, min_w):
+    """按内容自适应尺寸并居中于主窗口（固定高度在字体放大后会裁掉底部按钮）"""
+    dlg.update_idletasks()
+    w, h = max(dlg.winfo_reqwidth(), min_w), dlg.winfo_reqheight()
+    x = master.winfo_rootx() + max((master.winfo_width() - w) // 2, 0)
+    y = master.winfo_rooty() + max((master.winfo_height() - h) // 3, 0)
+    dlg.geometry(f"{w}x{h}+{x}+{y}")
+
 def short_path(p: str, n=52) -> str:
     if not p:
         return ""
@@ -213,8 +221,8 @@ class PathDialog(tk.Toplevel):
         super().__init__(master)
         self.configure(bg=BG, padx=16)
         self.title(f"路径信息 - {game.name}")
-        self.geometry("640x380")
         self.resizable(False, False)
+        self.transient(master)
         tk.Label(self, text=game.name, bg=BG, fg=TEXT,
                  font=(FONT, 15, "bold")).pack(anchor="w", pady=(12, 10))
         try:
@@ -242,6 +250,8 @@ class PathDialog(tk.Toplevel):
                        CARD, TEXT, CARD_HOVER).pack(side="left", padx=(6, 0))
         mk_btn(self, "关 闭", self.destroy, CARD, TEXT, CARD_HOVER,
                padx=28).pack(pady=16)
+        fit_dialog(self, master, 660)
+        self.grab_set()
 
     def copy(self, v: str):
         self.clipboard_clear()
@@ -254,8 +264,8 @@ class AddGameDialog(tk.Toplevel):
         self.app = app
         self.configure(bg=BG, padx=16)
         self.title("手动添加游戏")
-        self.geometry("520x210")
         self.resizable(False, False)
+        self.transient(master)
         tk.Label(self, text="添加一个不在自动扫描列表里的游戏", bg=BG, fg=SUB,
                  font=(FONT, 10)).pack(anchor="w", pady=(12, 6))
         tk.Label(self, text="游戏名称", bg=BG, fg=TEXT, font=(FONT, 10)).pack(anchor="w")
@@ -273,6 +283,8 @@ class AddGameDialog(tk.Toplevel):
         brow.pack(fill="x", pady=(12, 0))
         mk_btn(brow, "添 加", self.save, ACCENT, "white", ACCENT_HOVER, padx=24).pack(side="right")
         mk_btn(brow, "取 消", self.destroy, CARD, TEXT, CARD_HOVER, padx=24).pack(side="right", padx=6)
+        fit_dialog(self, master, 560)
+        self.grab_set()
 
     def browse(self):
         p = filedialog.askopenfilename(parent=self, title="选择游戏主程序",
@@ -310,8 +322,8 @@ class BookmarkDialog(tk.Toplevel):
             self.title("编辑网页页签")
             t = app.get_tabs(game)[index]
             head, name, url = f"编辑「{game.name}」的网页页签", t["name"], t["url"]
-        self.geometry("500x270")
         self.resizable(False, False)
+        self.transient(app)
         tk.Label(self, text=head, bg=BG, fg=SUB, font=(FONT, 10)).pack(anchor="w", pady=(12, 6))
         tk.Label(self, text="名字", bg=BG, fg=TEXT, font=(FONT, 10)).pack(anchor="w")
         self.name = tk.Entry(self, bg=ENTRY_BG, fg=TEXT, insertbackground=TEXT,
@@ -330,6 +342,8 @@ class BookmarkDialog(tk.Toplevel):
         mk_btn(brow, "保 存", self.save, ACCENT, "white", ACCENT_HOVER, padx=24).pack(side="right")
         mk_btn(brow, "取 消", self.destroy, CARD, TEXT, CARD_HOVER, padx=24).pack(side="right", padx=6)
         self.bind("<Return>", lambda e: self.save())
+        fit_dialog(self, app, 520)
+        self.grab_set()
 
     def save(self):
         name, url = self.name.get().strip(), self.url.get().strip()
